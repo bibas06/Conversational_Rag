@@ -1,7 +1,7 @@
 from langchain_community.vectorstores import Chroma
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_groq import ChatGroq
-from langchain.chains.conversational_retrieval.base import ConversationalRetrievalChain
+from langchain.chains import ConversationalRetrievalChain
 from langchain.memory import ConversationBufferMemory
 
 from app.config import DB_DIR, HF_EMBEDDING_MODEL, LLM_MODEL, GROQ_API_KEY

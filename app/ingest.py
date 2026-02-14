@@ -3,7 +3,7 @@ import sys
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_community.vectorstores import Chroma
-from langchain_huggingface import HuggingFaceEmbeddings # type: ignore
+from langchain_huggingface.embeddings import HuggingFaceEmbeddings
 from app.config import DB_DIR, HF_EMBEDDING_MODEL, CHUNK_SIZE, CHUNK_OVERLAP, DOCS_DIR, ALLOWED_IS_CODES
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
