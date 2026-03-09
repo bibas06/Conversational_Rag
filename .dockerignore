@@ -1,0 +1,17 @@
+# Python cache
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environment
+venv
+env
+
+# Git
+.git
+.gitignore
+
+# Environment files
+.env
+.env.*
