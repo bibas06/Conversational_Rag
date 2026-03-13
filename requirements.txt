@@ -1,11 +1,14 @@
 langchain
 langchain-core
+langchain-classic
 langchain-community
 langchain-groq
 chromadb
 streamlit
 python-dotenv
-tiktoken
 pypdf
 sentence-transformers
-torch
+pydantic
+requests
+fastapi
+uvicorn
