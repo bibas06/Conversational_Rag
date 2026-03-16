@@ -15,7 +15,6 @@ LLM_MODEL = "llama-3.1-8b-instant"
 CHUNK_SIZE = 1000
 CHUNK_OVERLAP = 150
 
-# Only include these 5 IS codes
 ALLOWED_IS_CODES = [
     "IS_456.pdf",
     "IS_800.pdf",
