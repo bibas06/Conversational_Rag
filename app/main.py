@@ -1,42 +1,147 @@
 from typing import List
-from fastapi import FastAPI, UploadFile, File, HTTPException
-from app.schemas import ChatRequest
-from app.rag_pipeline import rebuild_vectorstore, get_conversational_rag_chain
-import os, shutil
+from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks
+from app.schemas import ChatRequest, ChatResponse
+from app.rag_pipeline import rebuild_vectorstore, ask_question
+import os
+import shutil
+import logging
+import asyncio
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Civil IS Code RAG API")
 
 UPLOAD_DIR = "documents"
+DB_DIR = "db/chroma_db"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
+# Global variable to track ingestion status
+ingestion_in_progress = False
+
+@app.get("/")
+async def root():
+    return {"message": "Civil IS Code RAG API is running"}
+
 @app.post("/upload")
-def upload_pdfs(files: List[UploadFile] = File(...)):
+async def upload_pdfs(files: List[UploadFile] = File(...)):
+    """Upload PDF files - fast operation"""
     saved = []
+    errors = []
 
     for file in files:
         if not file.filename.lower().endswith(".pdf"):
-            raise HTTPException(400, "Only PDF allowed")
+            errors.append(f"{file.filename} is not a PDF")
+            continue
 
-        with open(os.path.join(UPLOAD_DIR, file.filename), "wb") as f:
-            shutil.copyfileobj(file.file, f)
+        try:
+            file_path = os.path.join(UPLOAD_DIR, file.filename)
+            
+            # Stream the file in chunks to handle large files
+            with open(file_path, "wb") as f:
+                content = await file.read()
+                f.write(content)
+                
+            saved.append(file.filename)
+            logger.info(f"Uploaded: {file.filename}")
+        except Exception as e:
+            errors.append(f"Failed to save {file.filename}: {str(e)}")
 
-        saved.append(file.filename)
-
-    # 🚀 NO INGESTION HERE → FAST RESPONSE
-    return {"status": "uploaded", "files": saved}
+    response = {"status": "uploaded", "files": saved}
+    if errors:
+        response["errors"] = errors
+    
+    return response
 
 @app.post("/ingest")
-def ingest():
-    rebuild_vectorstore()
-    return {"status": "ingestion completed"}
+async def ingest(background_tasks: BackgroundTasks):
+    """Trigger document ingestion - runs in background"""
+    global ingestion_in_progress
+    
+    if ingestion_in_progress:
+        return {"status": "ingestion already in progress"}
+    
+    ingestion_in_progress = True
+    
+    # Run ingestion in background
+    background_tasks.add_task(run_ingestion)
+    
+    return {
+        "status": "ingestion started", 
+        "message": "Processing in background. This may take a few minutes."
+    }
 
-@app.post("/chat")
-def chat(req: ChatRequest):
-    rag_chain = get_conversational_rag_chain()  # safe
+async def run_ingestion():
+    """Run ingestion in background"""
+    global ingestion_in_progress
+    try:
+        logger.info("Starting background ingestion...")
+        await asyncio.to_thread(rebuild_vectorstore)
+        logger.info("Background ingestion completed")
+    except Exception as e:
+        logger.error(f"Background ingestion failed: {e}")
+    finally:
+        ingestion_in_progress = False
 
-    result = rag_chain.invoke({
-        "input": req.query,
-        "chat_history": req.chat_history
-    })
+@app.get("/ingest/status")
+async def ingestion_status():
+    """Check ingestion status"""
+    global ingestion_in_progress
+    return {
+        "in_progress": ingestion_in_progress,
+        "vectorstore_exists": os.path.exists(DB_DIR)
+    }
 
-    return {"answer": result.get("answer", "")}
+@app.post("/chat", response_model=ChatResponse)
+async def chat(req: ChatRequest):
+    """Chat with the RAG system"""
+    try:
+        logger.info(f"Chat request: {req.query[:50]}...")
+        
+        # Check if vectorstore exists
+        if not os.path.exists(DB_DIR):
+            return ChatResponse(
+                answer="Please upload and ingest documents first using the 'Ingest Documents' button.",
+                structured_answer=None,
+                confidence="LOW",
+                sources=[],
+                follow_up_questions=[]
+            )
+        
+        # Get structured answer
+        result = ask_question(req.query, req.chat_history)
+        
+        # Extract fields
+        answer = result.get("answer", "No answer generated")
+        confidence = result.get("confidence", "MEDIUM")
+        sources = result.get("sources", [])
+        follow_ups = result.get("follow_up_questions", [])
+        
+        return ChatResponse(
+            answer=answer,
+            structured_answer=result,
+            confidence=confidence,
+            sources=sources,
+            follow_up_questions=follow_ups
+        )
+        
+    except Exception as e:
+        logger.error(f"Chat error: {e}")
+        return ChatResponse(
+            answer=f"Error: {str(e)}",
+            structured_answer=None,
+            confidence="LOW",
+            sources=[],
+            follow_up_questions=[]
+        )
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint"""
+    return {
+        "status": "healthy",
+        "vectorstore_exists": os.path.exists(DB_DIR),
+        "documents_dir_exists": os.path.exists(UPLOAD_DIR),
+        "document_count": len([f for f in os.listdir(UPLOAD_DIR) if f.endswith('.pdf')]) if os.path.exists(UPLOAD_DIR) else 0
+    }
