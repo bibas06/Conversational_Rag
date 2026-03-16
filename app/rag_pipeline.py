@@ -16,7 +16,6 @@ from pydantic import BaseModel, Field
 
 from app.config import *
 
-# ==================== Pydantic Models (for type safety only) ====================
 
 class SourceInfo(BaseModel):
     """Information about the source document"""
@@ -32,7 +31,7 @@ class StructuredAnswer(BaseModel):
     sources: List[SourceInfo] = []
     follow_up_questions: List[str] = []
 
-# ==================== Vectorstore Functions with Progress Tracking ====================
+
 
 def rebuild_vectorstore(progress_callback=None):
     """Rebuild the vector store from PDF documents with progress tracking"""
@@ -85,7 +84,7 @@ def rebuild_vectorstore(progress_callback=None):
     if progress_callback:
         progress_callback(40, f"Loaded {len(documents)} pages, splitting into chunks...")
     
-    # Improved text splitter
+    
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=CHUNK_SIZE,
         chunk_overlap=CHUNK_OVERLAP,
@@ -105,12 +104,12 @@ def rebuild_vectorstore(progress_callback=None):
         encode_kwargs={'normalize_embeddings': True}
     )
     
-    # Create and persist vectorstore
+    
     print(f"Creating vectorstore in {DB_DIR}...")
     if progress_callback:
         progress_callback(80, "Creating vectorstore (this may take a while)...")
     
-    # Delete existing vectorstore if it exists
+
     if os.path.exists(DB_DIR):
         import shutil
         shutil.rmtree(DB_DIR)
@@ -129,14 +128,14 @@ def rebuild_vectorstore(progress_callback=None):
     
     return vectorstore
 
-# ==================== Helper Functions ====================
+
 
 def extract_sources_from_context(docs) -> List[Dict]:
     """Extract source information from retrieved documents"""
     sources = []
     seen = set()
     
-    for i, doc in enumerate(docs[:3]):  # Limit to top 3 sources
+    for i, doc in enumerate(docs[:3]):  
         source_file = doc.metadata.get("source_file", "Unknown")
         page = doc.metadata.get("page", 0)
         
@@ -146,7 +145,7 @@ def extract_sources_from_context(docs) -> List[Dict]:
         if key not in seen:
             seen.add(key)
             
-            # Determine relevance based on position
+           
             relevance = "Direct" if i == 0 else "Supporting"
             
             sources.append({
@@ -165,16 +164,15 @@ def format_response_as_text(structured_response: Dict) -> str:
     """Format structured response as nice text without JSON"""
     lines = []
     
-    # Main answer
     lines.append(structured_response.get("answer", ""))
     lines.append("")
     
-    # Confidence
+    
     confidence = structured_response.get("confidence", "MEDIUM")
     lines.append(f"📊 **Confidence:** {confidence}")
     lines.append("")
     
-    # Key points
+  
     main_points = structured_response.get("main_points", [])
     if main_points:
         lines.append("**🔑 Key Points:**")
@@ -182,7 +180,7 @@ def format_response_as_text(structured_response: Dict) -> str:
             lines.append(f"• {point}")
         lines.append("")
     
-    # Sources
+   
     sources = structured_response.get("sources", [])
     if sources:
         lines.append("**📚 Sources:**")
@@ -193,7 +191,7 @@ def format_response_as_text(structured_response: Dict) -> str:
             lines.append(f"• {filename} (Page {page}) - {relevance}")
         lines.append("")
     
-    # Follow-up questions
+   
     follow_ups = structured_response.get("follow_up_questions", [])
     if follow_ups:
         lines.append("**💭 You might also ask:**")
@@ -202,9 +200,7 @@ def format_response_as_text(structured_response: Dict) -> str:
     
     return "\n".join(lines)
 
-# ==================== RAG Chain ====================
 
-# Global variables to cache the chain and memory
 _chain = None
 _memory = None
 
@@ -215,11 +211,11 @@ def get_conversational_rag_chain():
     if _chain is not None and _memory is not None:
         return _chain, _memory
     
-    # Check if vectorstore exists
+
     if not os.path.exists(DB_DIR):
         raise ValueError(f"Vectorstore directory {DB_DIR} does not exist. Please rebuild the vectorstore first.")
     
-    # Initialize embeddings and vectorstore
+   
     print("Initializing embeddings...")
     embeddings = HuggingFaceEmbeddings(
         model_name=HF_EMBEDDING_MODEL,
@@ -233,12 +229,12 @@ def get_conversational_rag_chain():
         embedding_function=embeddings,
     )
     
-    # Retriever
+ 
     retriever = vectorstore.as_retriever(
         search_kwargs={"k": 5}
     )
     
-    # Initialize LLM
+   
     print("Initializing LLM...")
     llm = ChatGroq(
         groq_api_key=GROQ_API_KEY,
@@ -247,21 +243,20 @@ def get_conversational_rag_chain():
         max_tokens=1024
     )
     
-    # Initialize memory
+   
     _memory = ConversationBufferMemory(
         memory_key="chat_history",
         return_messages=True,
         output_key="answer"
     )
     
-    # Contextualize question prompt
     contextualize_q_prompt = ChatPromptTemplate.from_messages([
         ("system", "Given a chat history and the latest user question, reformulate it as a standalone question."),
         MessagesPlaceholder(variable_name="chat_history"),
         ("human", "{input}"),
     ])
     
-    # Create history-aware retriever
+    
     history_aware_retriever = (
         RunnablePassthrough.assign(
             chat_history=lambda x: x.get("chat_history", [])
@@ -272,7 +267,7 @@ def get_conversational_rag_chain():
         | retriever
     )
     
-    # Answer generation prompt - NO JSON, just natural text with structure
+   
     system_prompt = """You are an expert assistant for Indian Civil Engineering IS codes. Answer based ONLY on the provided context.
 
 CONTEXT:
@@ -284,7 +279,7 @@ INSTRUCTIONS:
 3. Include 2-4 key points that support your answer
 4. List the sources you used (filenames from the context)
 5. Suggest 2-3 follow-up questions the user might ask
-6. Rate your confidence: HIGH (directly stated), MEDIUM (inferred), or LOW (limited info)
+
 
 FORMAT YOUR RESPONSE LIKE THIS:
 
@@ -299,7 +294,6 @@ FORMAT YOUR RESPONSE LIKE THIS:
 • [Filename] (Page X)
 • [Filename] (Page Y)
 
-📊 CONFIDENCE: [HIGH/MEDIUM/LOW]
 
 💭 YOU MIGHT ALSO ASK:
 • Follow-up question 1?
@@ -314,7 +308,7 @@ IMPORTANT: Do NOT output JSON. Use the format above with clear section headers."
         ("human", "{input}"),
     ])
     
-    # Create the chain
+    
     def combine_docs(input_dict):
         docs = input_dict.get("context", [])
         formatted_docs = format_docs(docs)
@@ -324,7 +318,7 @@ IMPORTANT: Do NOT output JSON. Use the format above with clear section headers."
             "input": input_dict.get("input", "")
         })
     
-    # Build the retrieval chain
+  
     retrieval_chain = (
         RunnablePassthrough.assign(
             context=history_aware_retriever
@@ -334,7 +328,7 @@ IMPORTANT: Do NOT output JSON. Use the format above with clear section headers."
         | StrOutputParser()
     )
     
-    # Parse the text response into structured format
+    
     def parse_response(response_text):
         """Parse the text response into structured format"""
         result = {
@@ -353,7 +347,7 @@ IMPORTANT: Do NOT output JSON. Use the format above with clear section headers."
             if not line:
                 continue
                 
-            # Check for section headers
+           
             if "🔑 KEY POINTS" in line or "KEY POINTS" in line:
                 current_section = "key_points"
                 continue
@@ -362,7 +356,7 @@ IMPORTANT: Do NOT output JSON. Use the format above with clear section headers."
                 continue
             elif "📊 CONFIDENCE" in line or "CONFIDENCE" in line:
                 current_section = "confidence"
-                # Extract confidence value
+               
                 if "HIGH" in line:
                     result["confidence"] = "HIGH"
                 elif "MEDIUM" in line:
@@ -374,14 +368,14 @@ IMPORTANT: Do NOT output JSON. Use the format above with clear section headers."
                 current_section = "follow_up"
                 continue
             elif current_section is None and not result["answer"]:
-                # This is the answer section
+                
                 if result["answer"] == response_text:
                     result["answer"] = line
                 else:
                     result["answer"] += "\n" + line
                 continue
             
-            # Process based on current section
+            
             if current_section == "key_points" and (line.startswith('•') or line.startswith('-')):
                 point = line.lstrip('•- ').strip()
                 if point:
@@ -395,10 +389,10 @@ IMPORTANT: Do NOT output JSON. Use the format above with clear section headers."
         
         return result
     
-    # Create final chain with parsing
+   
     def process_response(response_text):
         parsed = parse_response(response_text)
-        # Also keep the raw text for display
+        
         parsed["raw_text"] = response_text
         return parsed
     
@@ -408,10 +402,10 @@ IMPORTANT: Do NOT output JSON. Use the format above with clear section headers."
 
 def ask_question(question: str, chat_history: List[Tuple[str, str]] = None) -> Dict[str, Any]:
     """Ask a question and get a structured response"""
-    # Get the chain
+  
     chain, memory = get_conversational_rag_chain()
     
-    # Convert chat history to format expected by memory
+   
     if chat_history:
         for user_msg, ai_msg in chat_history:
             if user_msg:
@@ -419,19 +413,19 @@ def ask_question(question: str, chat_history: List[Tuple[str, str]] = None) -> D
             if ai_msg:
                 memory.chat_memory.add_ai_message(ai_msg)
     
-    # Invoke chain
+   
     try:
         response = chain.invoke({
             "input": question,
             "chat_history": memory.chat_memory.messages
         })
         
-        # Update memory
+        
         answer_text = response.get("answer", str(response))
         memory.chat_memory.add_user_message(question)
         memory.chat_memory.add_ai_message(answer_text)
         
-        # Add sources from context if available
+        
         if not response.get("sources") and hasattr(response, 'context'):
             response["sources"] = extract_sources_from_context(response.context)
         
@@ -441,7 +435,6 @@ def ask_question(question: str, chat_history: List[Tuple[str, str]] = None) -> D
         print(f"Error in ask_question: {e}")
         return {
             "answer": f"I encountered an error: {str(e)}",
-            "confidence": "LOW",
             "main_points": [],
             "sources": [],
             "follow_up_questions": []
