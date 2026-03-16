@@ -1,36 +1,11 @@
-# Use lightweight Python image
-FROM python:3.10-slim
+FROM python:3.13.5
 
-# Environment variables
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
-
-# Set working directory
 WORKDIR /app
 
-# Install system dependencies (needed for many ML libraries)
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    gcc \
-    git \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
-
-# Copy dependency file
-COPY requirements.txt .
-
-# Upgrade pip
-RUN pip install --upgrade pip
-
-# Install python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Copy entire project
 COPY . .
 
-# Expose ports
-EXPOSE 8501
-EXPOSE 8000
+RUN pip install -r requirements.txt
 
-# Default command (Streamlit UI)
+EXPOSE 8501
+
 CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]
