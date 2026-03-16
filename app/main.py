@@ -7,7 +7,6 @@ import shutil
 import logging
 import asyncio
 
-# Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -17,7 +16,6 @@ UPLOAD_DIR = "documents"
 DB_DIR = "db/chroma_db"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-# Global variable to track ingestion status
 ingestion_in_progress = False
 
 @app.get("/")
@@ -38,7 +36,7 @@ async def upload_pdfs(files: List[UploadFile] = File(...)):
         try:
             file_path = os.path.join(UPLOAD_DIR, file.filename)
             
-            # Stream the file in chunks to handle large files
+        
             with open(file_path, "wb") as f:
                 content = await file.read()
                 f.write(content)
@@ -64,7 +62,7 @@ async def ingest(background_tasks: BackgroundTasks):
     
     ingestion_in_progress = True
     
-    # Run ingestion in background
+    
     background_tasks.add_task(run_ingestion)
     
     return {
@@ -99,7 +97,7 @@ async def chat(req: ChatRequest):
     try:
         logger.info(f"Chat request: {req.query[:50]}...")
         
-        # Check if vectorstore exists
+        
         if not os.path.exists(DB_DIR):
             return ChatResponse(
                 answer="Please upload and ingest documents first using the 'Ingest Documents' button.",
@@ -109,10 +107,10 @@ async def chat(req: ChatRequest):
                 follow_up_questions=[]
             )
         
-        # Get structured answer
+        
         result = ask_question(req.query, req.chat_history)
         
-        # Extract fields
+        
         answer = result.get("answer", "No answer generated")
         confidence = result.get("confidence", "MEDIUM")
         sources = result.get("sources", [])
